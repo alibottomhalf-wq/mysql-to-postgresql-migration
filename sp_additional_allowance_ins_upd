@@ -1,0 +1,85 @@
+-- DROP PROCEDURE public.sp_additional_allowance_ins_upd(in int8, in int8, in numeric, in int4, in varchar, in int4, in int4, in int4, in int8, out varchar);
+
+CREATE OR REPLACE PROCEDURE public.sp_additional_allowance_ins_upd(IN _additionalallowanceid bigint, IN _employeeid bigint, IN _amount numeric, IN _month integer, IN _reason character varying, IN _year integer, IN _status integer, IN _payrollmonthlydetailid integer, IN _adminid bigint, OUT _processingresult character varying)
+ LANGUAGE plpgsql
+AS $procedure$
+DECLARE
+    _sqlstate TEXT;
+    _errorno TEXT;
+    _errortext TEXT;
+    _message TEXT;
+    _result VARCHAR;
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM additional_allowance 
+        WHERE employeeid = _employeeid AND month = _month AND year = _year
+    ) THEN
+        SELECT COALESCE(MAX(additionalallowanceid), 0) + 1 
+        INTO _additionalallowanceid 
+        FROM additional_allowance;
+        
+        INSERT INTO additional_allowance (
+            additionalallowanceid,
+            employeeid,
+            amount,
+            month,
+            year,
+            reason,
+            status,
+            payrollmonthlydetailid,
+            createdby,
+            createdon,
+            updatedby,
+            updatedon
+        ) VALUES (
+            _additionalallowanceid,
+            _employeeid,
+            _amount,
+            _month,
+            _year,
+            _reason,
+            _status,
+            _payrollmonthlydetailid,
+            _adminid,
+            timezone('utc', now()),
+            0,
+            NULL
+        );
+        
+        _processingresult := 'inserted';
+    ELSE
+        SELECT additionalallowanceid INTO _additionalallowanceid 
+        FROM additional_allowance
+        WHERE employeeid = _employeeid AND month = _month AND year = _year;
+        
+        UPDATE additional_allowance SET
+            amount = _amount,
+            month = _month,
+            year = _year,
+            status = _status,
+            reason = _reason,
+            payrollmonthlydetailid = _payrollmonthlydetailid,
+            updatedby = _adminid,
+            updatedon = timezone('utc', now())
+        WHERE additionalallowanceid = _additionalallowanceid;
+        
+        _processingresult := 'updated';
+    END IF;
+
+EXCEPTION WHEN OTHERS THEN
+    _sqlstate := SQLSTATE;
+    _errortext := SQLERRM;
+    _errorno := SQLSTATE;
+    _message := concat('ERROR ', _errorno, ' (', _sqlstate, '): ', _errortext);
+    
+    CALL sp_logexception(
+        _message::text, 
+        ''::text, 
+        'sp_additional_allowance_ins_upd'::varchar, 
+        B'1', 
+        B'0', 
+        _result
+    );
+END;
+$procedure$
+;
