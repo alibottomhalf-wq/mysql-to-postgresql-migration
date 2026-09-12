@@ -1,0 +1,70 @@
+-- DROP PROCEDURE public.sp_additional_allowance_filter(varchar, varchar, int4, int4);
+
+CREATE OR REPLACE PROCEDURE public.sp_additional_allowance_filter(IN _searchstring character varying, IN _sortby character varying, IN _pageindex integer, IN _pagesize integer)
+ LANGUAGE plpgsql
+AS $procedure$
+DECLARE
+    _sqlstate TEXT;
+    _errorno TEXT;
+    _errortext TEXT;
+    _message TEXT;
+    _result VARCHAR;
+    _selectquery TEXT;
+BEGIN
+
+    BEGIN
+
+        IF (_sortby IS NULL OR _sortby = '') THEN
+            _sortby := 'CreatedOn DESC';
+        END IF;
+
+        _selectquery := concat(
+            'SELECT * FROM (
+                SELECT
+                    ROW_NUMBER() OVER (ORDER BY ', _sortby, ') AS RowIndex,
+                    a.*,
+                    CONCAT(e.FirstName, '' '', e.LastName) AS Name,
+                    p.LockStatus,
+                    COUNT(1) OVER() AS Total
+                FROM additional_allowance a
+                LEFT JOIN employees e
+                    ON e.EmployeeUid = a.EmployeeId
+                LEFT JOIN payroll_period p
+                    ON p.ForMonth = a.Month
+                    AND p.ForYear = a.Year
+                WHERE ', _searchstring, '
+            ) T
+            WHERE RowIndex BETWEEN ',
+            ((_pageindex - 1) * _pagesize + 1),
+            ' AND ',
+            (_pageindex * _pagesize)
+        );
+
+        EXECUTE _selectquery;
+
+    EXCEPTION
+        WHEN OTHERS THEN
+
+            _sqlstate := SQLSTATE;
+            _errortext := SQLERRM;
+            _errorno := SQLSTATE;
+
+            _message := concat(
+                'ERROR ',
+                _errorno,
+                ' (',
+                _sqlstate,
+                '): ',
+                _errortext
+            );
+
+            -- Do NOT call sp_logexception here for now.
+            -- This avoids the OUT parameter problem.
+
+            RAISE NOTICE '%', _message;
+
+    END;
+
+END;
+$procedure$
+;
